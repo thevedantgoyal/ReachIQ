@@ -1,0 +1,153 @@
+# ============================================================
+# ReachIQ — Cursor Rules
+# Job Search Outreach Automation Platform
+# Read this before every response. Follow every rule strictly.
+# ============================================================
+
+## PROJECT OVERVIEW
+ReachIQ is a personal job search automation platform. It sends
+personalized cold outreach emails to HR/recruiters, attaches a
+resume PDF, and notifies the user on WhatsApp when someone replies.
+
+## TECH STACK — NEVER DEVIATE FROM THIS
+- Backend:      Python 3.11 + FastAPI
+- Database:     PostgreSQL 15 via SQLAlchemy (sync, not async)
+- Migrations:   Alembic
+- Queue:        Celery + Redis (broker + result backend)
+- AI:           Anthropic Claude API (claude-sonnet-4-20250514)
+- Email:        Gmail API via google-auth + googleapiclient
+- Notifications: Twilio WhatsApp API
+- Frontend Web: React 18 + Vite + TailwindCSS
+- Mobile:       React Native + Expo
+- Containerized: Docker + docker-compose (Postgres + Redis + pgAdmin)
+
+## PROJECT STRUCTURE — ALWAYS FOLLOW THIS
+reachiq/
+├── backend/
+│   ├── main.py
+│   ├── database.py
+│   ├── core/
+│   │   ├── config.py          # Pydantic BaseSettings, reads .env
+│   │   └── security.py        # any auth helpers
+│   ├── models/
+│   │   └── models.py          # ALL SQLAlchemy models in one file
+│   ├── schemas/
+│   │   └── schemas.py         # ALL Pydantic schemas in one file
+│   ├── routes/
+│   │   ├── campaigns.py
+│   │   ├── contacts.py
+│   │   ├── emails.py
+│   │   └── auth.py
+│   ├── services/
+│   │   ├── claude_service.py
+│   │   ├── gmail_service.py
+│   │   └── twilio_service.py
+│   └── workers/
+│       ├── celery_app.py
+│       ├── email_worker.py
+│       └── reply_watcher.py
+├── frontend-web/
+│   └── src/
+│       ├── pages/
+│       ├── components/
+│       └── App.jsx
+├── mobile/
+│   └── screens/
+├── docker-compose.yml
+├── .env
+├── .env.example
+├── alembic/
+├── alembic.ini
+└── requirements.txt
+
+## PYTHON RULES
+- Always use type hints on every function parameter and return type
+- Use Pydantic v2 syntax (model_config, not class Config)
+- Use pydantic-settings for config (BaseSettings), not python-dotenv directly
+- SQLAlchemy: use SessionLocal + Depends(get_db) pattern for all routes
+- Never use async SQLAlchemy — use sync engine only (Celery workers need sync)
+- All UUIDs use Python's uuid.uuid4() as default, PostgreSQL UUID type
+- Always add created_at with server_default=func.now() on every model
+- Never use print() — always use Python logging module
+- Every service function must have a docstring
+- Handle all exceptions explicitly — never bare except:
+
+## FASTAPI RULES
+- All routes use APIRouter with prefix and tags
+- Always return Pydantic response models — never return raw dicts
+- Use HTTPException with correct status codes (404, 422, 500)
+- Include /health endpoint on the main app
+- CORS enabled for localhost:5173 (Vite) and localhost:3000 (React Native)
+- All file uploads use UploadFile from FastAPI
+
+## DATABASE RULES
+- Never alter tables manually — always use Alembic migrations
+- After ANY model change: alembic revision --autogenerate -m "description"
+- Always run: alembic upgrade head before testing
+- Foreign keys always have ondelete="CASCADE" where appropriate
+- Index frequently queried columns (campaign_id, status, gmail_thread_id)
+
+## CELERY RULES
+- Celery app defined in backend/workers/celery_app.py — import from there
+- All tasks use @celery_app.task(bind=True, max_retries=3)
+- Retry with exponential backoff: self.retry(countdown=60 * (2 ** self.request.retries))
+- Always update job status in DB at start and end of every task
+- Never import FastAPI app inside Celery tasks — use direct DB sessions
+
+## ENVIRONMENT VARIABLES
+- All secrets come from .env via core/config.py Settings class
+- Never hardcode API keys, passwords, or tokens anywhere
+- If a new env var is needed, add it to BOTH .env.example and core/config.py
+
+## BUSINESS LOGIC RULES — CRITICAL
+- Daily email limit: 60 emails per day per campaign (hard limit, enforced in worker)
+- Delay between sends: random between 30–90 seconds (never fixed delay)
+- Max retry attempts per email job: 3
+- Retry backoff: attempt 1 = 5min, attempt 2 = 30min, attempt 3 = dead
+- Gmail thread ID must be saved after every send (needed for reply detection)
+- Reply watcher runs every 300 seconds (5 minutes) via Celery Beat
+- WhatsApp notification sent on: reply received, job dead, daily summary, campaign complete
+
+## CLAUDE API RULES
+- Always use model: claude-sonnet-4-20250514
+- System prompt and user prompt are always separate (two-layer design)
+- Output must always be JSON with keys: "subject" and "body"
+- Parse Claude response safely — wrap in try/except, validate JSON keys exist
+- If Claude returns invalid JSON, mark job as FAILED with reason "ai_parse_error"
+
+## FRONTEND RULES (React)
+- Use TailwindCSS utility classes only — no custom CSS files
+- Support light mode AND dark mode (Tailwind dark: prefix)
+- Components go in frontend-web/src/components/
+- Pages go in frontend-web/src/pages/
+- Use React Query (tanstack/react-query) for all API calls — no raw fetch in components
+- Use React Router v6 for routing
+- Use Axios instance (src/lib/axios.js) for all HTTP calls — base URL from env
+
+## MOBILE RULES (React Native)
+- Use Expo SDK 51+
+- Navigation: React Navigation v6
+- Styling: NativeWind (Tailwind for React Native)
+- API calls: same Axios pattern as web, pointing to backend URL
+
+## CODE QUALITY
+- No TODO comments in generated code — either implement it or note it in README
+- No unused imports
+- No magic numbers — use constants or config values
+- Every new file gets a docstring at the top explaining what it does
+- Git commit messages follow: "feat:", "fix:", "chore:" prefixes
+
+## VERIFICATION PATTERN
+After generating any backend code, always show:
+1. How to run it
+2. What the expected output/response looks like
+3. What to check if it fails
+
+## WHAT NOT TO DO
+- Never use Flask, Django, or any other backend framework
+- Never use MongoDB or any NoSQL DB
+- Never use SMTP directly — always Gmail API
+- Never send all 100 emails at once — always through the queue
+- Never store API keys in code
+- Never skip Alembic — no Base.metadata.create_all() in production routes
+- Never use synchronous sleep() in FastAPI routes — only in Celery workers
