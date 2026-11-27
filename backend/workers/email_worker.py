@@ -12,16 +12,19 @@ from celery.exceptions import Retry
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.core.campaign_control import is_campaign_paused
 from backend.core.config import get_settings
 from backend.database import SessionLocal
 from backend.models.models import Campaign, Contact, DailySendLog, EmailJob
 from backend.services import gemini_service, gmail_service, twilio_service
+from backend.services.gemini_service import AIParseError
 from backend.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
 MAX_JOB_ATTEMPTS = 3
 DAILY_LIMIT_RETRY_SECONDS = 3600
+PAUSE_DEFER_SECONDS = 300
 
 
 def _parse_uuid(value: str, label: str) -> uuid.UUID:
@@ -103,6 +106,58 @@ def _mark_job_dead(db: Session, job: EmailJob, contact: Contact) -> None:
         logger.exception("Failed to send dead-job WhatsApp alert: %s", exc)
 
 
+def _persist_failure_audit(
+    db: Session,
+    job: EmailJob | None,
+    exc: BaseException,
+    *,
+    prompt: str | None = None,
+    latency_ms: int | None = None,
+) -> None:
+    """
+    After a rollback, persist failure_reason (and optional LLM audit fields) then commit.
+
+    Must run before any raise / self.retry so a later rollback cannot erase the audit.
+    """
+    if job is None:
+        return
+    job.failure_reason = f"{type(exc).__name__}: {exc}"[:255]
+    if prompt is not None:
+        job.prompt = prompt
+    if latency_ms is not None:
+        job.llm_latency_ms = latency_ms
+    db.commit()
+
+
+def _defer_if_paused(
+    db: Session,
+    job: EmailJob,
+    contact_id: str,
+    campaign_id: str,
+    resume_path: str,
+) -> dict[str, str] | None:
+    """
+    If the campaign is paused, reset the job to pending and re-queue without using retries.
+
+    Returns a result dict when deferred, otherwise ``None``.
+    """
+    if not is_campaign_paused():
+        return None
+    job.status = "pending"
+    db.commit()
+    send_email_job.apply_async(
+        args=[contact_id, campaign_id, resume_path],
+        countdown=PAUSE_DEFER_SECONDS,
+    )
+    logger.info(
+        "Campaign paused; deferred contact=%s campaign=%s by %ss",
+        contact_id,
+        campaign_id,
+        PAUSE_DEFER_SECONDS,
+    )
+    return {"status": "deferred_paused"}
+
+
 @celery_app.task(bind=True, max_retries=3, name="backend.workers.email_worker.send_email_job")
 def send_email_job(self, contact_id: str, campaign_id: str, resume_path: str) -> dict[str, str]:
     """
@@ -136,6 +191,10 @@ def send_email_job(self, contact_id: str, campaign_id: str, resume_path: str) ->
         job.status = "processing"
         db.commit()
 
+        deferred = _defer_if_paused(db, job, contact_id, campaign_id, resume_path)
+        if deferred is not None:
+            return deferred
+
         sent_today = _get_today_send_count(db, parsed_campaign_id)
         if sent_today >= settings.DAILY_EMAIL_LIMIT:
             logger.info(
@@ -159,9 +218,17 @@ def send_email_job(self, contact_id: str, campaign_id: str, resume_path: str) ->
         )
         time.sleep(delay_seconds)
 
+        deferred = _defer_if_paused(db, job, contact_id, campaign_id, resume_path)
+        if deferred is not None:
+            return deferred
+
         recipient_name = contact.full_name or contact.email
         company = _resolve_company(contact, campaign)
         email_content = gemini_service.generate_email(recipient_name, company)
+
+        job.prompt = str(email_content["prompt"])
+        job.llm_latency_ms = int(email_content["llm_latency_ms"])
+        db.commit()
 
         send_result = gmail_service.send_email(
             to_email=contact.email,
@@ -190,8 +257,33 @@ def send_email_job(self, contact_id: str, campaign_id: str, resume_path: str) ->
     except Retry:
         raise
 
+    except AIParseError as exc:
+        db.rollback()
+        if job is not None and contact is not None:
+            _persist_failure_audit(
+                db,
+                job,
+                exc,
+                prompt=exc.prompt,
+                latency_ms=exc.latency_ms,
+            )
+            logger.warning("AI parse error for contact %s", contact_id)
+            job.retry_count += 1
+            if job.retry_count >= MAX_JOB_ATTEMPTS:
+                _mark_job_dead(db, job, contact)
+                return {"status": "dead", "reason": "ai_parse_error"}
+            job.status = "failed"
+            db.commit()
+            raise self.retry(
+                countdown=60 * (2 ** self.request.retries),
+                exc=exc,
+            ) from exc
+        logger.exception("AI parse error without job context: %s", exc)
+        raise
+
     except ValueError as exc:
         db.rollback()
+        _persist_failure_audit(db, job, exc)
         if str(exc) == "ai_parse_error" and job is not None and contact is not None:
             logger.warning("AI parse error for contact %s", contact_id)
             job.retry_count += 1
@@ -213,6 +305,7 @@ def send_email_job(self, contact_id: str, campaign_id: str, resume_path: str) ->
     except Exception as exc:
         db.rollback()
         if job is not None and contact is not None:
+            _persist_failure_audit(db, job, exc)
             job.retry_count += 1
             if job.retry_count >= MAX_JOB_ATTEMPTS:
                 _mark_job_dead(db, job, contact)
