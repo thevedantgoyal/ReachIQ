@@ -11,7 +11,7 @@ from typing import Any
 from google import genai
 from google.genai import types
 from google.genai.errors import ClientError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from backend.core.config import get_settings
 
@@ -52,8 +52,6 @@ class ReplyCategory(str, Enum):
 
 class ReplyCategoryResult(BaseModel):
     """Schema-constrained Gemini output for reply classification."""
-
-    model_config = ConfigDict(extra="forbid")
 
     category: ReplyCategory
 

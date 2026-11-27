@@ -10,6 +10,7 @@ import pytest
 from backend.services.gemini_service import (
     AIParseError,
     ReplyCategory,
+    ReplyCategoryResult,
     classify_reply,
     generate_email,
 )
@@ -88,3 +89,23 @@ def test_classify_reply_returns_other_when_gemini_fails(
 
     result = classify_reply("Thanks for reaching out, let's chat next week.")
     assert result == ReplyCategory.other
+
+
+@patch("backend.services.gemini_service.genai.Client")
+def test_classify_reply_schema_has_no_additional_properties(
+    mock_client_cls: MagicMock,
+) -> None:
+    """Reply schema must not emit additional_properties (Gemini 400 otherwise)."""
+    client = MagicMock()
+    mock_client_cls.return_value = client
+    client.models.generate_content.return_value = SimpleNamespace(
+        text='{"category":"interested"}',
+        parsed=ReplyCategoryResult(category=ReplyCategory.interested),
+    )
+
+    classify_reply("Can we talk Thursday?")
+
+    config = client.models.generate_content.call_args.kwargs["config"]
+    assert "additional_properties" not in str(config.response_schema)
+    assert "additional_properties" not in str(ReplyCategoryResult.model_json_schema())
+
