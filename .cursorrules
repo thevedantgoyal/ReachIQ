@@ -14,7 +14,7 @@ resume PDF, and notifies the user on WhatsApp when someone replies.
 - Database:     PostgreSQL 15 via SQLAlchemy (sync, not async)
 - Migrations:   Alembic
 - Queue:        Celery + Redis (broker + result backend)
-- AI:           Anthropic Claude API (claude-sonnet-4-20250514)
+- AI:           Google Gemini via google-genai SDK (model from settings.GEMINI_MODEL, gemini_service.py)
 - Email:        Gmail API via google-auth + googleapiclient
 - Notifications: Twilio WhatsApp API
 - Frontend Web: React 18 + Vite + TailwindCSS
@@ -39,7 +39,7 @@ reachiq/
 │   │   ├── emails.py
 │   │   └── auth.py
 │   ├── services/
-│   │   ├── claude_service.py
+│   │   ├── gemini_service.py
 │   │   ├── gmail_service.py
 │   │   └── twilio_service.py
 │   └── workers/
@@ -108,12 +108,13 @@ reachiq/
 - Reply watcher runs every 300 seconds (5 minutes) via Celery Beat
 - WhatsApp notification sent on: reply received, job dead, daily summary, campaign complete
 
-## CLAUDE API RULES
-- Always use model: claude-sonnet-4-20250514
-- System prompt and user prompt are always separate (two-layer design)
+## GEMINI API RULES
+- Always use google-genai SDK via backend/services/gemini_service.py
+- Model comes from settings.GEMINI_MODEL (never hardcode the model id in call sites)
 - Output must always be JSON with keys: "subject" and "body"
-- Parse Claude response safely — wrap in try/except, validate JSON keys exist
-- If Claude returns invalid JSON, mark job as FAILED with reason "ai_parse_error"
+- Parse Gemini response safely — wrap in try/except, validate JSON keys exist
+- On invalid JSON: re-prompt once inside gemini_service; if still invalid raise AIParseError / ValueError("ai_parse_error")
+- If parse still fails after the inner re-prompt, mark job as FAILED with reason "ai_parse_error"
 
 ## FRONTEND RULES (React)
 - Use TailwindCSS utility classes only — no custom CSS files
