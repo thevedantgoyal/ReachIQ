@@ -59,6 +59,7 @@ class Contact(Base):
         String(50), nullable=False, default="pending", index=True
     )
     reply_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reply_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     replied_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -100,6 +101,9 @@ class EmailJob(Base):
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
     gmail_thread_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
