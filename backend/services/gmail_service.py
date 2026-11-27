@@ -270,11 +270,17 @@ def check_replies(thread_ids: list[str], db: Session) -> list[dict[str, Any]]:
             full = (
                 service.users()
                 .messages()
-                .get(userId="me", id=str(mid), format="metadata", metadataHeaders=["From", "Subject"])
+                .get(
+                    userId="me",
+                    id=str(mid),
+                    format="metadata",
+                    metadataHeaders=["From", "Subject", "Auto-Submitted"],
+                )
                 .execute()
             )
             headers = full.get("payload", {}).get("headers") or []
             from_raw = _header_value(headers, "From") or ""
+            auto_submitted = _header_value(headers, "Auto-Submitted")
             _, addr = parseaddr(from_raw)
             addr_lower = addr.lower()
             if addr_lower and addr_lower != google_email:
@@ -283,6 +289,8 @@ def check_replies(thread_ids: list[str], db: Session) -> list[dict[str, Any]]:
                 latest_inbound = {
                     "thread_id": thread_id,
                     "reply_from": from_raw,
+                    "from_address": addr_lower,
+                    "auto_submitted": auto_submitted,
                     "reply_preview": snippet,
                     "received_at": received_at,
                 }

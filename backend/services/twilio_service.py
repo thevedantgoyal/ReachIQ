@@ -27,17 +27,28 @@ def _send_whatsapp(body: str) -> None:
         raise
 
 
-def notify_reply(contact_name: str, company: str, preview: str) -> None:
+def notify_reply(
+    contact_name: str,
+    company: str,
+    preview: str,
+    category: str,
+) -> None:
     """Notify the user that a contact replied to an outreach email."""
     name = contact_name.strip() or "A contact"
     org = company.strip() or "unknown company"
     snippet = preview.strip() or "(no preview)"
+    category_label = (category or "other").replace("_", " ").title()
     body = (
-        f"ReachIQ: New reply from {name} at {org}.\n"
+        f"ReachIQ: {category_label} reply from {name} at {org}.\n"
         f"Preview: {snippet[:500]}"
     )
     _send_whatsapp(body)
-    logger.info("WhatsApp reply notification sent for %s at %s", name, org)
+    logger.info(
+        "WhatsApp reply notification sent for %s at %s (category=%s)",
+        name,
+        org,
+        category,
+    )
 
 
 def notify_dead_job(contact_email: str) -> None:

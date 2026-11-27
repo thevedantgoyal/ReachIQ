@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.core.campaign_control import CAMPAIGN_PAUSED_KEY, is_campaign_paused
 from backend.core.config import get_settings
 from backend.database import get_db
 from backend.models.models import Campaign, Contact, DailySendLog, EmailJob
@@ -27,8 +28,6 @@ from backend.workers.email_worker import send_email_job
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
-
-CAMPAIGN_PAUSED_KEY = "campaign:paused"
 
 
 def _redis_client() -> redis.Redis:
@@ -139,6 +138,9 @@ def campaign_status(db: Session = Depends(get_db)) -> CampaignStatusResponse:
     dead = db.scalar(
         select(func.count()).select_from(EmailJob).where(EmailJob.status == "dead")
     ) or 0
+    bounced = db.scalar(
+        select(func.count()).select_from(Contact).where(Contact.status == "bounced")
+    ) or 0
     sent_today = db.scalar(
         select(func.coalesce(func.sum(DailySendLog.emails_sent), 0)).where(
             DailySendLog.log_date == date.today()
@@ -153,4 +155,6 @@ def campaign_status(db: Session = Depends(get_db)) -> CampaignStatusResponse:
         failed=failed,
         dead=dead,
         sent_today=int(sent_today),
+        bounced=int(bounced),
+        paused=is_campaign_paused(),
     )

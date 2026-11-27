@@ -16,6 +16,19 @@ import {
 
 const LAST_SEEN_KEY = 'reachiq_last_seen_replies_count'
 
+const CATEGORY_PILL = {
+  interested: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  rejected: 'bg-red-50 text-red-600 border-red-100',
+  out_of_office: 'bg-gray-100 text-gray-600 border-gray-200',
+  needs_more_info: 'bg-amber-50 text-amber-700 border-amber-100',
+  other: 'bg-gray-50 text-gray-500 border-gray-100',
+}
+
+function categoryLabel(category) {
+  if (!category) return 'Other'
+  return String(category).replace(/_/g, ' ')
+}
+
 function replyRateLabel(rate) {
   if (rate < 5) return { text: 'Warming up', color: 'text-gray-500' }
   if (rate <= 15) return { text: 'Getting traction', color: 'text-amber-600' }
@@ -204,8 +217,18 @@ export default function Replies() {
                     </a>
                   </div>
 
-                  <div className="flex items-center justify-between mt-4 pt-2">
-                    <StatusBadge status="replied" />
+                  <div className="flex items-center justify-between gap-2 mt-4 pt-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <StatusBadge status="replied" />
+                      <span
+                        className={clsx(
+                          'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border capitalize shrink-0',
+                          CATEGORY_PILL[reply.reply_category] || CATEGORY_PILL.other,
+                        )}
+                      >
+                        {categoryLabel(reply.reply_category)}
+                      </span>
+                    </div>
                     <span className="text-xs text-gray-400 truncate max-w-[140px]">
                       📧 {reply.email}
                     </span>

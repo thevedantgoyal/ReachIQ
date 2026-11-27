@@ -1,6 +1,6 @@
 /** Campaign control page — upload contacts, resume path, launch, and live activity. */
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
@@ -136,6 +136,12 @@ export default function Campaign() {
     refetchInterval: 8000,
   })
 
+  useEffect(() => {
+    if (typeof status?.paused === 'boolean') {
+      setPaused(status.paused)
+    }
+  }, [status?.paused])
+
   const processing = status?.processing ?? 0
 
   const { data: contactsData } = useQuery({
@@ -153,6 +159,7 @@ export default function Campaign() {
     mutationFn: pauseCampaign,
     onSuccess: () => {
       setPaused(true)
+      queryClient.invalidateQueries({ queryKey: ['campaignStatus'] })
       showToast('Campaign paused', 'info')
     },
   })
@@ -161,6 +168,7 @@ export default function Campaign() {
     mutationFn: resumeCampaign,
     onSuccess: () => {
       setPaused(false)
+      queryClient.invalidateQueries({ queryKey: ['campaignStatus'] })
       showToast('Campaign resumed', 'success')
     },
   })

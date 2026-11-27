@@ -34,6 +34,7 @@ class ContactResponse(BaseModel):
     company: str | None = None
     status: str
     reply_preview: str | None = None
+    reply_category: str | None = None
     replied_at: datetime | None = None
     created_at: datetime
 
@@ -95,6 +96,8 @@ class CampaignStatusResponse(BaseModel):
     failed: int
     dead: int
     sent_today: int = 0
+    bounced: int = 0
+    paused: bool = False
 
 
 class RepliedContactResponse(BaseModel):
@@ -107,6 +110,7 @@ class RepliedContactResponse(BaseModel):
     full_name: str | None = None
     company: str | None = None
     reply_preview: str | None = None
+    reply_category: str | None = None
     replied_at: datetime | None = None
 
 
